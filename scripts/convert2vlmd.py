@@ -20,7 +20,6 @@ Example usage:
     ./scripts/convert2vlmd.py --clean_dd_directory input --output_directory output --hdp_id HDP12345--overwrite True --project_type "HEAL Study"
 """
 import logging
-import argparse
 import os
 import pandas as pd
 from pathlib import Path
@@ -91,7 +90,7 @@ def detect_input_type(filepath: str):
         input_type = None
     return input_type 
 
-def create_directory_structure(output_path: Path, clean_study_path: Path, hdp_id: str, use_hdpid_as_outputdirname=True):
+def create_directory_structure(output_path: Path, clean_study_path: Path, hdp_id: str, project_name:bool=None):
     """
     Create required directories for the application and temporary working space.
 
@@ -109,7 +108,7 @@ def create_directory_structure(output_path: Path, clean_study_path: Path, hdp_id
         tuple: hdp_dir as Path objects.
     """
     # Create the application directory if it doesn't exist
-    parent_path = output_path / f"data-dictionaries/{hdp_id}" if use_hdpid_as_outputdirname else output_path / f"data-dictionaries/{clean_study_path.name}"
+    parent_path = output_path / f"data-dictionaries/{hdp_id}" if project_name is None else output_path / f"data-dictionaries/{project_name}"
     input_dir =  parent_path / "input"
     vlmd_dir = parent_path / "vlmd"
 
@@ -196,7 +195,7 @@ def determine_appl_id(hdp_id:str):
         return found_appl_id
     else:
         logging.warning("appl_id not found in the JSON response.")
-        return ""
+        return None
 
 def determine_hdp_id(appl_id:str):
     """
@@ -362,6 +361,12 @@ def process_files(clean_study_path:Path, output_study_path: Path, appl_id: str, 
     default=None
 )
 @click.option(
+    "--project",
+    type=str,
+    help="Directory name to be used instead of provided hdp_id to write output files to",
+    default=None
+)
+@click.option(
     "--project_type", 
     type=str, 
     help="Study type (eg.Research Programs, Research Networks, etc)", 
@@ -373,10 +378,10 @@ def process_files(clean_study_path:Path, output_study_path: Path, appl_id: str, 
     help="Option to overwrite existing VLMDs instead of asking to delete manually",
     default=False
 )
-def process_study_files(clean_study_directory:str, output_directory:str, hdp_id:str, appl_id:str, project_type:str, overwrite: bool):
+def process_study_files(clean_study_directory:str, output_directory:str, hdp_id:str, appl_id:str, project:str, project_type:str, overwrite: bool):
 
     # Fetch project metadata from the HEAL data service
-    logging.info("Getting Study Title from MDS")
+    logging.info("Getting Project Metadata from MDS")
     project_title = fetch_project_metadata(hdp_id)
     if project_title is None:
         return
@@ -384,6 +389,9 @@ def process_study_files(clean_study_directory:str, output_directory:str, hdp_id:
     ## If project title was not found, ask user if they would like to provide a project title.
     if project_title=='NOT FOUND':
         project_title = input("Querying MDS did not get the project title. Enter the project title: ")
+
+    if appl_id is None:
+        appl_id = determine_appl_id(hdp_id=hdp_id)
 
     logging.info("Creating output directory structure")
     # Set up required directory structure for outputs and temporary work
@@ -397,7 +405,7 @@ def process_study_files(clean_study_directory:str, output_directory:str, hdp_id:
         logging.error("Invalid Output Path. Please provide a valid path to the clone of heal-data-dictionaries github repository")
         return
     
-    output_study_path = create_directory_structure(output_path=output_path, clean_study_path=clean_study_path, hdp_id=hdp_id)
+    output_study_path = create_directory_structure(output_path=output_path, clean_study_path=clean_study_path, hdp_id=hdp_id, project=project)
 
     logging.info("Converting files using HEAL Data Utils tool")
     # Process each file and collect configuration details

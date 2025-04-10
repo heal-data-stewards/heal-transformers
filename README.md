@@ -1,15 +1,17 @@
 # HEAL Data Dictionaries Converter
 
-This script processes CSV files containing HEAL Data Dictionaries by converting them
-to VLMD format and generating a metadata YAML file. It retrieves project metadata from
-the HEAL data service, creates the required directory structure, and processes each CSV
+This script processes Redcap-style CSV and Stata files containing HEAL Data Dictionaries by converting them
+to VLMD format and generating corresponding metadata YAML file. It retrieves project metadata from
+the HEAL metadata service, creates the required directory structure, and processes each CSV/Stata
 file. The output files (VLMD files, metadata YAML, etc.) are then prepared for further
 processing or upload to GitHub.
+The primary aim is to create files that are ready to be ingested by the [HEAL Data Platform](https://healdata.org/portal).
 
 ## Features
 
-- CSV to VLMD Conversion: Converts CSV files to VLMD format using supported input types.
-- Metadata Retrieval: Fetches project metadata from the HEAL data service.
+- Redcap-style CSV to VLMD Conversion: Converts CSV files to VLMD format using supported input types.
+- Stata to VLMD Conversion
+- Metadata Retrieval: Fetches project metadata from the HEAL metadata service.
 - Dynamic Directory Structure: Creates output directories for converted files and
   temporary workspaces.
 - Flexible Argument Parsing: Key parameters can be provided via command-line arguments.
@@ -18,79 +20,62 @@ processing or upload to GitHub.
 
 ## Command-Line Arguments
 
---input_directory
-    Type: str
-    Default: DataDictionaries/AssignedDataDictionaries
-    Description: Base directory containing input CSV files. The script expects a
-    subdirectory within this directory named after the project identifier.
+--clean_study_directory
+Type: str
+Required: Yes
+Description: Directory containing input data dictionary files. This directory will contain one file for every data dictionary in the study, which is ready to be ingested by [healdata-utils](https://heal.github.io/healdata-utils/) tool.
 
 --output_directory
-    Type: str
-    Default: DataDictionaries/CleanedDataDictionaries
-    Description: Directory where output files (VLMD, YAML, etc.) are stored.
+Type: str
+Required: Yes
+Description: All output files (VLMD, YAML, etc.) will be stored in <output_director>/data-dictionaries/<HDP_ID> or <output_director>/data-dictionaries/<HDP_ID> if <project> is provided.
+A directory for every input file will be generated with a vlmd.json, vlmd.csv and a corresponding metadata.yaml.
 
 --project
-    Type: str
-    Required: Yes
-    Description: Project identifier used to locate CSV files in the input directory
-    and to construct output paths.
+Type: str
+Default: ''
+Description: If povided, output files will be written to <output_directory>/data-dictionaries/<project> folder
 
 --hdp_id
-    Type: str
-    Default: Defaults to the project identifier if not provided.
-    Description: HEAL project ID used in querying metadata and naming directories.
+Type: str
+Required: Yes
+Description: HEAL project ID (HDPID) used in querying metadata and naming directories.
 
 --appl_id
-    Type: str
-    Default: "" (empty string)
-    Description: APPL ID. If not provided, the script retrieves the JSON metadata from
-    the URL and searches for the first occurrence of appl_id.
+Type: str
+Default: "" (empty string)
+Description: APPL ID. If not provided, the APPL ID is extracted from the MDS service query on HDPID.
 
---temp_dir
-    Type: str
-    Default: tmp
-    Description: Base directory for temporary files. A temporary directory is created
-    as {temp_dir}/{project}.
+--project_type
+Type: str
+Default: Research Programs
+Description: Study type (eg.HEAL Research Programs, HEAL Research Networks, HEAL Study), (default="Research Programs")
+
+--overwrite
+Type: flag
+Default: False
+Description: If provided, any outputs previously generated will be overwritten. If not, an error will be generated when existing output files are found.
 
 ## Usage Example
 
-    ./scripts/convert_v2.py --input_directory input \
-      --output_directory output \
-      --project MyStudy \
-      --hdp_id HDP12345 \
-      --appl_id 9877133 \
-      --temp_dir tmp
+Example 1:
+./scripts/convert2vlmd.py --clean_study_directory <path-to-dir-with-study-files> \
+ --output_directory <path-to-output-directory> \
+ --hdp_id HDP12345 \
+ --project_type "Resaerch Programs"
 
-If --appl_id is omitted, the script retrieves the metadata from:
+The script retrieves appl_id from the metadata from: https://healdata.org/mds/metadata/{hdp_id} and extracts the APPL ID automatically.
 
-    https://healdata.org/mds/metadata/{hdp_id}
+The outputs will be written to <path-to-output-directory>/data-dictionaries/HDP12345
 
-and extracts the APPL ID automatically.
-
-## Process Flow
-
-Metadata Retrieval:
-    The script constructs a query URL using the provided or automatically determined
-    APPL ID and retrieves the JSON metadata. If no APPL ID is supplied, it fetches the
-    JSON using the HDP ID and searches for the key appl_id.
-
-Directory Structure Setup:
-    Creates an output directory under the APPL ID.
-    Under the output directory, creates an HDP subdirectory that includes two folders:
-    vlmd (for converted files) and input (for the original CSV files).
-    A temporary directory is created at {temp_dir}/{project}.
-
-CSV File Processing:
-    Searches for CSV files in the input directory under a subfolder named after the
-    project identifier. Each CSV file is processed using supported conversion types.
-
-Metadata YAML Generation:
-    If file conversions are successful, a metadata YAML file is generated in the vlmd
-    directory with project and file-specific configuration details.
-
-Final Output:
-    The resulting VLMD files, original CSV files (copied to the input directory), and
-    metadata YAML are ready for further use.
+Example 2:
+./scripts/convert2vlmd.py --clean_study_directory <path-to-dir-with-study-files> \
+ --output_directory <path-to-output-directory> \
+ --hdp_id HDP12345 \
+ --appl_id 9877133 \
+ --project HEALResearchProgram
+--project_type "Resaerch Programs"
+The outputs will be written to <path-to-output-directory>/data-dictionaries/HEALResearchProgram
 
 ## Dependencies
 
