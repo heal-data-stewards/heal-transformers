@@ -1,0 +1,13 @@
+# Ignore files from VSCode
+/.vscode
+
+# Ignore macOS .DS_Store files.
+.DS_Store
+
+# for python venv
+.venv
+/lib
+/bin
+.python-version
+pyvenv.cfg
+*.pyc
