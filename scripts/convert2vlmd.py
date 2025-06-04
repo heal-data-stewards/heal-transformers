@@ -90,7 +90,7 @@ def detect_input_type(filepath: str):
         input_type = None
     return input_type 
 
-def create_directory_structure(output_path: Path, clean_study_path: Path, hdp_id: str, project_name:bool=None):
+def create_directory_structure(output_path: Path, hdp_id: str, project_name:str = None):
     """
     Create required directories for the application and temporary working space.
 
@@ -289,8 +289,9 @@ def process_files(clean_study_path:Path, output_study_path: Path, appl_id: str, 
         ## If metadata yaml file does not exist, chances are that the generated vlmd files (if they exist) were generated in error.
         ## Overwrite any existing vlmd files when the metadata.yaml file does not exist.
         overwrite_if_no_yaml = overwrite or not metadata_yaml_path.exists()
-
-        output_file = output_dd_folder_path / f"{hdp_id}_{dd_folder_name}.vlmd.csv"
+        
+        prefix = f"{hdp_id}_" if hdp_id not in dd_folder_name else ""
+        output_file = output_dd_folder_path / f"{prefix}{dd_folder_name}.vlmd.csv" 
         description = f"DD converted using healdata-utils for input type {input_type}"
         try:
             data_dictionaries = convert_to_vlmd(
@@ -405,7 +406,7 @@ def process_study_files(clean_study_directory:str, output_directory:str, hdp_id:
         logging.error("Invalid Output Path. Please provide a valid path to the clone of heal-data-dictionaries github repository")
         return
     
-    output_study_path = create_directory_structure(output_path=output_path, clean_study_path=clean_study_path, hdp_id=hdp_id, project=project)
+    output_study_path = create_directory_structure(output_path=output_path, hdp_id=hdp_id, project_name=project)
 
     logging.info("Converting files using HEAL Data Utils tool")
     # Process each file and collect configuration details
