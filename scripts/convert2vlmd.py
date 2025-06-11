@@ -288,37 +288,48 @@ def process_files(
         overwrite_if_no_yaml = overwrite or not metadata_yaml_path.exists()
 
         # Before calling vlmd_extract: if the JSON already exists and overwrite is False, skip.
-        expected_json = output_dd_folder_path / f"{dd_folder_name}.json"
-        if expected_json.exists() and not overwrite_if_no_yaml:
-            logging.info(f"{dd_folder_name}.json already exists and overwrite=False → skipping extraction")
+        # 1) Pre-check for an existing heal-dd_<stem>.json
+        emitted_name = f"heal-dd_{dd_folder_name}.json"
+        emitted_path = output_dd_folder_path / emitted_name
+
+        if emitted_path.exists() and not overwrite_if_no_yaml:
+            final_json_path = emitted_path
+            logging.info(
+                f"Skipping extraction; found existing {emitted_name} and overwrite=False"
+            )
             valid_count += 1
+
         else:
+            # 2) Run the new extractor
             try:
-                # Run the new vlmd_extract
                 vlmd_extract(
                     str(file_path),
                     title=dd_folder_name,
                     output_dir=str(output_dd_folder_path)
                 )
 
-                # By default, vlmd_extract writes `<dd_folder_name>.json` into output_dir.
-                if not expected_json.exists():
-                    raise FileNotFoundError(f"Expected VLMD JSON not found at {expected_json}")
+                # 3) Verify it actually wrote heal-dd_<stem>.json
+                if not emitted_path.exists():
+                    raise FileNotFoundError(
+                        f"Expected output {emitted_name} in {output_dd_folder_path}"
+                    )
 
-                # If we want the JSON file prefixed by hdp_id (for consistency):
-                prefix = f"{hdp_id}_" if hdp_id not in dd_folder_name else ""
-                prefixed_json = output_dd_folder_path / f"{prefix}{dd_folder_name}.json"
-                if prefix and expected_json.exists():
-                    expected_json.rename(prefixed_json)
-                    final_json_path = prefixed_json
-                else:
-                    final_json_path = expected_json
+                # 4) Rename to prepend your HDP ID, if needed
+                prefix = f"{hdp_id}_"
+                target_name = (
+                    f"{prefix}{dd_folder_name}.json"
+                    if not emitted_path.name.startswith(prefix)
+                    else emitted_path.name
+                )
+                final_json_path = output_dd_folder_path / target_name
+                if emitted_path.name != target_name:
+                    emitted_path.rename(final_json_path)
 
             except ValidationError as v_err:
-                logging.error(f"[ValidationError] {file_path.name} failed VLMD schema check: {v_err}")
+                logging.error(f"[ValidationError] {file_path.name} → {v_err}")
                 continue
             except ExtractionError as e_err:
-                logging.error(f"[ExtractionError] {file_path.name} VLMD extraction failed: {e_err}")
+                logging.error(f"[ExtractionError] {file_path.name} → {e_err}")
                 continue
             except FileNotFoundError as fnf:
                 logging.error(f"[FileNotFoundError] {fnf}")
