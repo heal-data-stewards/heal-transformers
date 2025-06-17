@@ -237,6 +237,13 @@ def fetch_project_metadata(hdp_id: str):
     project_title = "NOT FOUND"
     project_title = mds_response['nih_reporter'].get('project_title', project_title) if 'nih_reporter' in mds_response else 'NOT FOUND'
     
+    if project_title == "NOT FOUND":
+        logging.info(f"Trying Cedar fields: {mds_response['gen3_discovery']['study_metadata']['minimal_info']}")
+        project_title = mds_response['gen3_discovery']['study_metadata']['minimal_info'].get('study_name', project_title) if \
+                            ('gen3_discovery' in mds_response and \
+                             'study_metadata' in mds_response['gen3_discovery'] and \
+                             'minimal_info' in mds_response['gen3_discovery']['study_metadata']
+                            ) else 'NOT FOUND'
     return project_title
 
 def process_files(clean_study_path:Path, output_study_path: Path, appl_id: str, hdp_id:str, project_title: str, project_type: str, overwrite:bool = False):
