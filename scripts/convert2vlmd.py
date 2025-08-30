@@ -57,7 +57,7 @@ def create_metadata_yaml(yaml_path: Path, hdp_id: str, appl_id: str, project_tit
             'ProjectType': project_type,
             'LastModified': str(date.today()),
             'ProjectTitle': project_title,
-            'Status': 'Draft'
+            'Status': 'READY'
         }
     }
     if appl_id:
