@@ -22,15 +22,16 @@ Example usage:
 import logging
 import os
 import pandas as pd
-from pathlib import Path
 import shutil
 import re
 import yaml
 import requests
-from datetime import date
 import click
 
-from healdata_utils.conversion import convert_to_vlmd
+from pathlib import Path
+from datetime import date
+from jsonschema import ValidationError
+from heal.vlmd import vlmd_extract, ExtractionError
 
 # Configure logging: adjust level and format as needed
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -246,103 +247,147 @@ def fetch_project_metadata(hdp_id: str):
                             ) else 'NOT FOUND'
     return project_title
 
-def process_files(clean_study_path:Path, output_study_path: Path, appl_id: str, hdp_id:str, project_title: str, project_type: str, overwrite:bool = False):
+
+def process_files(
+    clean_study_path: Path,
+    output_study_path: Path,
+    appl_id: str,
+    hdp_id: str,
+    project_title: str,
+    project_type: str,
+    overwrite: bool = False
+):
     """
-    Process CSV files by converting them to VLMD format using multiple input types.
-    If conversion fails for all supported types, log an error message indicating that the file requires additional cleaning.
+    Process CSV files by extracting VLMD (JSON) using `vlmd_extract`.  
+    If extraction fails (schema or other), log and skip.
+    On success, copy the original CSV to `input/` and generate metadata.yaml.
 
     Parameters:
-        clean_study_path (Path): path to the directory with cleaned data dictionaries
-        file_list (list): List of CSV file paths.
-        hdp_dir (Path): Final HDP directory.
+        clean_study_path (Path): directory with cleaned data dictionaries (CSVs).
+        output_study_path (Path): base output directory for this study.
         appl_id (str): Application identifier.
-        raw_name (str): Raw study name.
+        hdp_id (str): HEAL Data Platform identifier.
         project_title (str): Title of the project.
-
-    Returns:
-        dict: file_configs with file names as keys and configuration dictionaries as values.
+        project_type (str): Type of the project (e.g., "clinical", "lab", etc.).
+        overwrite (bool): If True, always re‐run extraction (even if JSON exists).
     """
-
-    ### Create a list of files fromt the clean study directory
-    ### Process each file in this list -> convert, create file_config, create metadata_yaml, and create corresponding directory
-    print(clean_study_path)
-    file_list = [f for f in clean_study_path.glob("*") if not f.name.startswith('.')]
-    print(file_list)
-    logging.info(f"Found {len(file_list)} files for study in dir {clean_study_path}")
+    print(f"Looking for CSVs under: {clean_study_path}")
+    file_list = [f for f in clean_study_path.glob("*.csv") if not f.name.startswith(".")]
+    logging.info(f"Found {len(file_list)} CSV file(s) in {clean_study_path}")
     logging.debug(file_list)
 
-
     valid_count = 0
+
     for file_path in file_list:
+        # We assume detect_input_type only controls logging/skipping; vlmd_extract auto‐detects format.
         input_type = detect_input_type(str(file_path))
         if input_type is None:
-            logging.info(f"Skipping non-compliant file: {file_path}")
+            logging.info(f"Skipping (non‐compliant) file: {file_path.name}")
             continue
 
-        data_dictionaries = None
-
-        ## Inside vlmd folder, create a directory for this file. 
-        # Process, and create output in this subfolder
-        # Create file config, and create metadata.yaml file for this file.
-
-        # Try multiple input types: first "csv-data", then "redcap-csv"
-        logging.info(f'>>> Processing file: {file_path} with input type: {input_type}')
-        dd_folder_name = file_path.stem.replace(' ', '_')
-        vlmd_subpath = f"vlmd/{dd_folder_name}/" # Allowing this subfolder generation even if one file is available to account for the case when there are more than one files being processed one after the other.
-        output_dd_folder_path = output_study_path / vlmd_subpath
+        logging.info(f">>> Processing file: {file_path.name}  (detected input_type = {input_type})")
+        dd_folder_name = file_path.stem.replace(" ", "_")
+        vlmd_subdir = f"vlmd/{dd_folder_name}"
+        output_dd_folder_path = output_study_path / vlmd_subdir
         output_dd_folder_path.mkdir(parents=True, exist_ok=True)
 
         metadata_yaml_path = output_dd_folder_path / "metadata.yaml"
-        ## If metadata yaml file does not exist, chances are that the generated vlmd files (if they exist) were generated in error.
-        ## Overwrite any existing vlmd files when the metadata.yaml file does not exist.
         overwrite_if_no_yaml = overwrite or not metadata_yaml_path.exists()
-        
-        prefix = f"{hdp_id}_" if hdp_id not in dd_folder_name else ""
-        output_file = output_dd_folder_path / f"{prefix}{dd_folder_name}.vlmd.csv" 
-        description = f"DD converted using healdata-utils for input type {input_type}"
-        try:
-            data_dictionaries = convert_to_vlmd(
-                input_filepath=str(file_path),
-                output_filepath=str(output_file),
-                inputtype=input_type,
-                data_dictionary_props={"title": dd_folder_name, "description": description},
-                output_overwrite=overwrite_if_no_yaml
+
+        # Before calling vlmd_extract: if the JSON already exists and overwrite is False, skip.
+        # 1) Pre-check for an existing heal-dd_<stem>.json
+        emitted_name = f"heal-dd_{dd_folder_name}.json"
+        emitted_path = output_dd_folder_path / emitted_name
+
+        if emitted_path.exists() and not overwrite_if_no_yaml:
+            final_json_path = emitted_path
+            logging.info(
+                f"Skipping extraction; found existing {emitted_name} and overwrite=False"
             )
-        except FileExistsError:
-            logging.info(f'{dd_folder_name} : {description} already processed')
-            continue
+            valid_count += 1
+
         else:
-            # Check if conversion was valid
-            if not (data_dictionaries['errors']['csvtemplate']['valid'] and data_dictionaries['errors']['jsontemplate']['valid']):
-                logging.error(f"File {file_path} requires additional cleaning before processing. Not creating Metadata.yaml")
+            # 2) Run the new extractor
+            try:
+                vlmd_extract(
+                    str(file_path),
+                    title=dd_folder_name,
+                    output_dir=str(output_dd_folder_path)
+                )
+
+                # 3) Verify it actually wrote heal-dd_<stem>.json
+                if not emitted_path.exists():
+                    raise FileNotFoundError(
+                        f"Expected output {emitted_name} in {output_dd_folder_path}"
+                    )
+
+                # 4) Rename to prepend your HDP ID, if needed
+                prefix = f"{hdp_id}_"
+                target_name = (
+                    f"{prefix}{dd_folder_name}.json"
+                    if not emitted_path.name.startswith(prefix)
+                    else emitted_path.name
+                )
+                final_json_path = output_dd_folder_path / target_name
+                if emitted_path.name != target_name:
+                    emitted_path.rename(final_json_path)
+
+            except ValidationError as v_err:
+                logging.error(f"[ValidationError] {file_path.name} → {v_err}")
                 continue
-            
-            valid_count +=1
-            ## If the conversion was successful, create the config file, and copy the input file to the input directory
-            # Copy the original CSV file to the "input" directory with a new name
-            input_dest = output_study_path / f"input/{file_path.name}"
-            shutil.copyfile(file_path, input_dest)
-            
-            vlmd_json_dest = str(output_file).replace(".csv", ".json")
-            # Prepare file configuration using regex substitutions to create GitHub URL paths
-            file_config = {
-                'inputtype': input_type,
-                'input_filepath': re.sub(".*input/",
-                                        f"https://github.com/heal-data-stewards/heal-data-dictionaries/tree/main/data-dictionaries/{output_study_path.name}/input/",
-                                        str(input_dest)),
-                'output_filepath': re.sub(".*vlmd/",
-                                        f"https://github.com/heal-data-stewards/heal-data-dictionaries/tree/main/data-dictionaries/{output_study_path.name}/vlmd/",
-                                        str(vlmd_json_dest)),
-                'relative_input_filepath': re.sub(".*input/", "../input/", str(input_dest)),
-                'relative_output_filepath': re.sub(".*vlmd/", "../", str(vlmd_json_dest))
-            }
-            file_configs = {dd_folder_name: file_config}
-            create_metadata_yaml(metadata_yaml_path, hdp_id, appl_id, project_title, file_configs, dd_folder_name, project_type)
+            except ExtractionError as e_err:
+                logging.error(f"[ExtractionError] {file_path.name} → {e_err}")
+                continue
+            except FileNotFoundError as fnf:
+                logging.error(f"[FileNotFoundError] {fnf}")
+                continue
+            else:
+                valid_count += 1
 
-            # Final logging statement indicating successful processing and readiness for GitHub upload
-            logging.info("CSV, VLMD, and metadata YAML files have been created and are ready for upload to GitHub.")
+        # At this point, the JSON exists at final_json_path. Proceed to copy original CSV.
+        input_dest_dir = output_study_path / "input"
+        input_dest_dir.mkdir(parents=True, exist_ok=True)
 
-    logging.info(f"Found {len(file_list)} files in {clean_study_path}. Conversion tool was able to create valid vlmd files for {valid_count} files")
+        input_dest = input_dest_dir / file_path.name
+        shutil.copyfile(file_path, input_dest)
+
+        # Build file_config (pointing at the .json under vlmd/, rather than .vlmd.csv)
+        # Note: We replace local paths with GitHub URLs using regex substitutions.
+        file_config = {
+            "inputtype": input_type,
+            "input_filepath": re.sub(
+                r".*input/",
+                f"https://github.com/heal-data-stewards/heal-data-dictionaries/tree/main/data-dictionaries/{output_study_path.name}/input/",
+                str(input_dest)
+            ),
+            "output_filepath": re.sub(
+                r".*vlmd/",
+                f"https://github.com/heal-data-stewards/heal-data-dictionaries/tree/main/data-dictionaries/{output_study_path.name}/vlmd/",
+                str(final_json_path)
+            ),
+            "relative_input_filepath": re.sub(r".*input/", "../input/", str(input_dest)),
+            "relative_output_filepath": re.sub(r".*vlmd/", "../", str(final_json_path))
+        }
+
+        # Write metadata.yaml (using the same helper as before).
+        file_configs = {dd_folder_name: file_config}
+        create_metadata_yaml(
+            metadata_yaml_path,
+            hdp_id,
+            appl_id,
+            project_title,
+            file_configs,
+            dd_folder_name,
+            project_type
+        )
+
+        logging.info(f"Successfully processed {file_path.name}; VLMD JSON at {final_json_path.name}")
+
+    logging.info(
+        f"Found {len(file_list)} file(s) in {clean_study_path}. "
+        f"Valid VLMD conversions: {valid_count}"
+    )
+
 
 # Set up command line arguments.
 @click.command()
