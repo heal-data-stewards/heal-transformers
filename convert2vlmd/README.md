@@ -1,15 +1,12 @@
 # HEAL Data Dictionaries Converter
 
-The script `script/conver2vlmd.py` processes Redcap-style CSV and Stata files containing HEAL Data Dictionaries by converting them
-to VLMD format and generating corresponding metadata YAML file. It retrieves project metadata from
-the HEAL metadata service, creates the required directory structure, and processes each CSV/Stata
-file. The output files (VLMD files, metadata YAML, etc.) are then prepared for further
-processing or upload to GitHub.
-The primary aim is to create files that are ready to be ingested by the [HEAL Data Platform](https://healdata.org/portal).
+The script `script/convert2vlmd.py` processes REDCap data dictionary CSVs and Stata files containing HEAL Data Dictionaries by converting them to VLMD format and generating corresponding metadata YAML file. It retrieves project metadata from the HEAL metadata service, creates the required directory structure, and processes each CSV/Stata file. The output files (VLMD files, metadata YAML, etc.) are then prepared for further processing or upload to GitHub. The primary aim is to create files that are ready to be ingested by the [HEAL Data Platform](https://healdata.org/portal).
+
+Original code can be found here: https://github.com/uc-cdis/heal-data-dictionaries/tree/main/notebooks/reference/convert2vlmd.py
 
 ## Features
 
-- Redcap-style CSV to VLMD Conversion: Converts CSV files to VLMD format using supported input types.
+- REDCap CSV to VLMD Conversion: Converts CSV files to VLMD format using supported input types.
 - Stata to VLMD Conversion
 - Metadata Retrieval: Fetches project metadata from the HEAL metadata service.
 - Dynamic Directory Structure: Creates output directories for converted files and
