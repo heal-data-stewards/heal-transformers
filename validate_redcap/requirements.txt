@@ -1,0 +1,4 @@
+pandas
+pyreadstat
+python-dotenv
+requests
